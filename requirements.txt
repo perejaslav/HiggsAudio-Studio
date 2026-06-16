@@ -1,12 +1,12 @@
 # Higgs Audio Studio — Python deps (torch/torchaudio installed separately in install.bat with CUDA)
-transformers>=5.5
-accelerate
-bitsandbytes
-gradio
-soundfile
-numpy
-pyloudnorm  # выравнивание громкости спикеров в миксе (LUFS, EBU R128); тянет scipy
-huggingface_hub
-hf-xet
-sentencepiece
-protobuf
+transformers==5.12.1
+accelerate==1.5.0
+bitsandbytes==0.45.3
+gradio==6.18.0
+soundfile==0.13.1
+numpy==2.2.4
+pyloudnorm==0.2.0
+huggingface_hub==0.30.2
+hf-xet==1.0.0
+sentencepiece==0.2.0
+protobuf==5.29.4
