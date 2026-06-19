@@ -133,6 +133,9 @@ REM  Шаг 5: Зависимости
 REM ============================================================
 echo [4/7] Устанавливаю зависимости...
 python\python.exe -m pip install -r requirements.txt --no-warn-script-location
+REM Облачные голоса качаются через huggingface_hub (httpx). Выкидываем urllib3-future/niquests,
+REM если приехали транзитивно — их битый HTTP/2 (hface) ломал скачивание голосов (ишью #2).
+python\python.exe -m pip uninstall -y urllib3-future niquests 2>nul
 
 REM ============================================================
 REM  Шаг 6: Triton для torch.compile (~2x). Скобки/for-блоки убраны (goto-поток).
@@ -155,13 +158,19 @@ echo [OK] Python headers установлены
 :after_accel
 
 REM ============================================================
-REM  Шаг 7: llama-cpp-python (GGUF-режиссёр на GPU) + CUDA-рантайм рядом с llama.dll
+REM  Шаг 7: llama-cpp-python (GGUF-режиссёр, GPU) + ЕГО СОБСТВЕННЫЙ CUDA 12.4-рантайм.
+REM  Колесо abetlen собрано под cu124 и не бандлит cudart/cublas. Брать их от torch (12.6/12.8)
+REM  НЕЛЬЗЯ: ggml-cuda(12.4)+cuBLAS(12.8) рушит общий CUDA-контекст -> torch "invalid argument".
+REM  Ставим llama её родной 12.4-рантайм (nvidia-вешалки), НЕ от torch.
 REM ============================================================
 echo [6/7] Устанавливаю llama-cpp-python (AI-режиссёр, GGUF)...
 if "%CUDA_VERSION%"=="cpu" goto :llama_cpu
 python\python.exe -m pip install llama-cpp-python --only-binary=:all: --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124 --no-warn-script-location
-echo Копирую CUDA-рантайм torch рядом с llama.dll...
-for %%D in (cudart64_12.dll cublas64_12.dll cublasLt64_12.dll cusparse64_12.dll) do if exist "python\Lib\site-packages\torch\lib\%%D" copy /y "python\Lib\site-packages\torch\lib\%%D" "python\Lib\site-packages\llama_cpp\lib\%%D" >nul 2>&1
+echo Ставлю CUDA 12.4-рантайм для llama (совпадает со сборкой ggml-cuda)...
+python\python.exe -m pip install nvidia-cuda-runtime-cu12==12.4.127 nvidia-cublas-cu12==12.4.5.8 --no-warn-script-location
+echo Кладу 12.4 cudart/cublas рядом с llama.dll...
+for %%P in (cuda_runtime cublas) do for %%D in (cudart64_12.dll cublas64_12.dll cublasLt64_12.dll) do if exist "python\Lib\site-packages\nvidia\%%P\bin\%%D" copy /y "python\Lib\site-packages\nvidia\%%P\bin\%%D" "python\Lib\site-packages\llama_cpp\lib\%%D" >nul
+if not exist "python\Lib\site-packages\llama_cpp\lib\cublasLt64_12.dll" echo [ВНИМАНИЕ] cublasLt64_12.dll не скопирован - режиссёр может не стартовать!
 goto :after_llama
 :llama_cpu
 python\python.exe -m pip install llama-cpp-python --only-binary=:all: --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu --no-warn-script-location

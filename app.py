@@ -72,7 +72,6 @@ MAX_SPK = 4
 OWN_FILE = "— свой файл / own file —"
 
 CLOUD_VOICES_REPO = "Slait/russia_voices"
-CLOUD_VOICES_BASE = "https://huggingface.co/datasets/Slait/russia_voices/resolve/main"
 
 
 # ----------------------------------------------------------------------------
@@ -394,9 +393,23 @@ def set_out_format(f):
     _OUT_FORMAT = f if f in _FMT else "wav"
 
 
+def _has_audio(wav):
+    try:
+        return wav is not None and len(wav) > 0
+    except TypeError:
+        return False
+
+
+def _safe_audio_output(sr, wav, ctx="tts"):
+    if not _has_audio(wav):
+        print(f"[{ctx}] empty audio result; returning None to Gradio to avoid crash", flush=True)
+        return None
+    return sr, wav
+
+
 def _save(sr, wav, prefix="tts"):
     import soundfile as sf
-    if wav is None or len(wav) == 0:
+    if not _has_audio(wav):
         return None
     fmt = _OUT_FORMAT
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
@@ -546,17 +559,15 @@ def cb_load_cloud():
 
 
 def _dl_voice(name):
-    import requests
+    """Скачать один облачный голос через huggingface_hub (httpx-бэкенд, без сырого
+    requests/urllib3 — обходит баг urllib3-future hface http2). .txt не обязателен."""
+    from huggingface_hub import hf_hub_download
     try:
-        r = requests.get(f"{CLOUD_VOICES_BASE}/{name}.mp3?download=true", timeout=90)
-        r.raise_for_status()
-        (VOICES_DIR / f"{name}.mp3").write_bytes(r.content)
+        hf_hub_download(CLOUD_VOICES_REPO, f"{name}.mp3", repo_type="dataset", local_dir=str(VOICES_DIR))
         try:
-            rt = requests.get(f"{CLOUD_VOICES_BASE}/{name}.txt?download=true", timeout=30)
-            if rt.status_code == 200:
-                (VOICES_DIR / f"{name}.txt").write_text(rt.text, encoding="utf-8")
+            hf_hub_download(CLOUD_VOICES_REPO, f"{name}.txt", repo_type="dataset", local_dir=str(VOICES_DIR))
         except Exception:
-            pass
+            pass  # транскрипт не обязателен (или его нет в датасете)
         return True
     except Exception as e:
         print(f"[voices] dl {name}: {e}")
@@ -599,8 +610,11 @@ def cb_tts(text, model, auto, temperature, top_p, top_k, max_new, seed):
     text = _maybe_enrich(text, model, auto)
     sr, wav = _speak(text, temperature=temperature, top_p=top_p, top_k=top_k,
                      max_new_tokens=max_new, seed=seed)
+    audio = _safe_audio_output(sr, wav, ctx="tts")
+    if audio is None:
+        return None, text
     _save(sr, wav, "tts")
-    return (sr, wav), text
+    return audio, text
 
 
 def cb_enrich(text, model):
@@ -611,8 +625,11 @@ def cb_expr(text, model, auto):
     eng.clear_cancel()
     text = _maybe_enrich(text, model, auto)
     sr, wav = _speak(text)
+    audio = _safe_audio_output(sr, wav, ctx="expr")
+    if audio is None:
+        return None, text
     _save(sr, wav, "expr")
-    return (sr, wav), text
+    return audio, text
 
 
 def cb_clone(text, model, auto, ref_audio, ref_text, preset, temperature, top_p, seed):
@@ -620,8 +637,11 @@ def cb_clone(text, model, auto, ref_audio, ref_text, preset, temperature, top_p,
     text = _maybe_enrich(text, model, auto)
     ref = ref_audio or (voice_path(preset) if preset and preset != OWN_FILE else None)
     sr, wav = _speak(text, ref_audio=ref, ref_text=ref_text, temperature=temperature, top_p=top_p, seed=seed)
+    audio = _safe_audio_output(sr, wav, ctx="clone")
+    if audio is None:
+        return None, text
     _save(sr, wav, "clone")
-    return (sr, wav), text
+    return audio, text
 
 
 def cb_podcast_script(topic, num, model):

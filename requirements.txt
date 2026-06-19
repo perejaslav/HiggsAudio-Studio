@@ -10,3 +10,5 @@ huggingface_hub==0.30.2
 hf-xet==1.0.0
 sentencepiece==0.2.0
 protobuf==5.29.4
+torchaudio  # устанавливается отдельно через install.bat (указан здесь для совместимости)
+llama-cpp-python  # AI Director (Qwen GGUF)
